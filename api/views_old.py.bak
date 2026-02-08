@@ -1,0 +1,461 @@
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.shortcuts import get_object_or_404
+from django.conf import settings
+from django.contrib.auth.models import User
+from core.models import ProfilEleve, Matiere, Topic, Exercice, Soumission, Progression
+from api.serializers import (
+    ProfilEleveSerializer, MatiereSerializer, TopicSerializer,
+    ExerciceSerializer, SoumissionSerializer, ProgressionSerializer,
+    UserSignupSerializer, UserSerializer
+)
+from ia.services import generate_explication_ia, generate_exercice_ia, generate_audio, chat_tuteur_ia
+
+
+class ChatbotViewSet(viewsets.ViewSet):
+    """
+    ViewSet pour le Tuteur Intelligent (Chatbot).
+    Disponible pour CE1-CM2.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['post'])
+    def chat(self, request):
+        """
+        Envoie un message au tuteur intelligent.
+        Body: {
+            "message": str,
+            "history": list (optionnel)
+        }
+        """
+        message = request.data.get('message')
+        history = request.data.get('history', [])
+        
+        if not message:
+            return Response({'error': 'Message requis'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        profil = get_object_or_404(ProfilEleve, user=request.user)
+        
+        # Vérifier si la classe est autorisée (CE1-CM2)
+        if profil.classe in ['cp1', 'cp2']:
+            return Response(
+                {'error': 'Le Tuteur Intelligent est disponible à partir du CE1.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user_info = {
+            'username': request.user.username,
+            'points': profil.points
+        }
+        
+        response_text = chat_tuteur_ia(message, profil.classe, history, user_info=user_info)
+        
+        if not response_text:
+            return Response(
+                {'error': 'Erreur lors de la communication avec l\'IA.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+        return Response({'response': response_text})
+
+
+class SignupView(viewsets.GenericViewSet):
+    """Inscription des nouveaux élèves"""
+    serializer_class = UserSignupSerializer
+    permission_classes = []
+
+    def create(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response({
+                "message": "Utilisateur créé avec succès",
+                "user": UserSerializer(user).data
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ProfilEleveViewSet(viewsets.ModelViewSet):
+    """Gestion des profils élèves"""
+    queryset = ProfilEleve.objects.all()
+    serializer_class = ProfilEleveSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return ProfilEleve.objects.filter(user=self.request.user)
+
+    @action(detail=False, methods=['get', 'patch'])
+    def mon_profil(self, request):
+        """Récupère ou met à jour le profil de l'utilisateur connecté"""
+        profil = get_object_or_404(ProfilEleve, user=request.user)
+        if request.method == 'PATCH':
+            serializer = self.get_serializer(profil, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = self.get_serializer(profil)
+        return Response(serializer.data)
+
+
+class MatiereViewSet(viewsets.ReadOnlyModelViewSet):
+    """Liste des matières"""
+    queryset = Matiere.objects.all()
+    serializer_class = MatiereSerializer
+    pagination_class = None  # Désactiver pagination pour matières (liste courte)
+
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    def get_queryset(self):
+        queryset = Matiere.objects.all()
+        classe = self.request.query_params.get('classe')
+        if not classe and self.request.user.is_authenticated:
+            try:
+                classe = self.request.user.profil_eleve.classe
+            except:
+                pass
+        
+        if classe and classe.lower() in ['cp1', 'cp2']:
+            queryset = queryset.exclude(nom__icontains='histoire').exclude(nom__icontains='geographie').exclude(nom__icontains='géographie')
+            
+        return queryset.order_by('ordre')
+
+
+class TopicViewSet(viewsets.ReadOnlyModelViewSet):
+    """Liste des topics par matière/classe"""
+    queryset = Topic.objects.all()
+    serializer_class = TopicSerializer
+    pagination_class = None  # Désactiver pagination pour topics (listes filtrées courtes)
+    
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+    
+    def get_queryset(self):
+        queryset = Topic.objects.select_related('matiere').all()
+        matiere = self.request.query_params.get('matiere', None)
+        classe = self.request.query_params.get('classe', None)
+        
+        # Si authentifié et action=list, on limite à la classe de l'utilisateur par défaut
+        if self.request.user.is_authenticated and self.action == 'list':
+            try:
+                profil = self.request.user.profil_eleve
+                if not classe: # Si pas de classe en param, on utilise celle du profil
+                    classe = profil.classe
+            except ProfilEleve.DoesNotExist:
+                pass
+
+        if matiere:
+            queryset = queryset.filter(matiere__nom=matiere)
+        if classe:
+            queryset = queryset.filter(classe=classe)
+        
+        return queryset
+
+
+class ExerciceViewSet(viewsets.ReadOnlyModelViewSet):
+    """Gestion des exercices"""
+    queryset = Exercice.objects.all()
+    serializer_class = ExerciceSerializer
+    pagination_class = None  # Désactiver pagination pour exercices (listes filtrées)
+    
+    def get_queryset(self):
+        queryset = Exercice.objects.select_related('topic', 'topic__matiere').all()
+        topic_id = self.request.query_params.get('topic', None)
+        difficulte = self.request.query_params.get('difficulte', None)
+        
+        if topic_id:
+            queryset = queryset.filter(topic_id=topic_id)
+        if difficulte:
+            queryset = queryset.filter(difficulte=difficulte)
+        
+        return queryset
+    
+    @action(detail=False, methods=['post'])
+    def soumettre(self, request):
+        """
+        Soumet une réponse à un exercice.
+        Body: {
+            "exercice_id": int,
+            "reponse_index": int,
+            "temps_reponse": int (optionnel),
+            "classe": str (optionnel, pour utilisateurs anonymes)
+        }
+        """
+        exercice_id = request.data.get('exercice_id')
+        reponse_index = request.data.get('reponse_index')
+        temps_reponse = request.data.get('temps_reponse', None)
+        classe = request.data.get('classe', 'cp1')
+        
+        if not exercice_id or reponse_index is None:
+            return Response(
+                {'error': 'exercice_id et reponse_index requis'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        exercice = get_object_or_404(Exercice, id=exercice_id)
+        
+        # Gérer utilisateurs authentifiés et anonymes
+        if request.user.is_authenticated:
+            # Utilisateur authentifié
+            profil, _ = ProfilEleve.objects.get_or_create(
+                user=request.user,
+                defaults={'classe': classe}
+            )
+        else:
+            # Utilisateur anonyme : créer ou récupérer via session
+            session_key = request.session.session_key
+            if not session_key:
+                request.session.create()
+                session_key = request.session.session_key
+            
+            # Créer un utilisateur temporaire pour les sessions anonymes
+            username_anonyme = f'anonyme_{session_key[:8]}'
+            user_anonyme, _ = User.objects.get_or_create(
+                username=username_anonyme,
+                defaults={'is_active': False}  # Utilisateur système, pas actif
+            )
+            profil, _ = ProfilEleve.objects.get_or_create(
+                user=user_anonyme,
+                defaults={'classe': classe}
+            )
+        
+        # Vérifier réponse
+        est_correcte = (reponse_index == exercice.correct_index)
+        score = exercice.points_recompense if est_correcte else 0
+        
+        # Générer explication de la réponse
+        options = exercice.options_text or exercice.options_images or []
+        reponse_choisie = options[reponse_index] if reponse_index < len(options) else "Inconnue"
+        reponse_correcte = options[exercice.correct_index] if exercice.correct_index < len(options) else "Inconnue"
+        
+        if est_correcte:
+            explication = f"Excellente réponse ! {reponse_choisie} est bien la bonne réponse. {exercice.feedback_success_text}"
+        else:
+            explication = f"Ce n'est pas la bonne réponse. Tu as choisi '{reponse_choisie}', mais la bonne réponse était '{reponse_correcte}'. {exercice.feedback_fail_text}"
+        
+        # Créer soumission (pour tous, authentifiés et anonymes)
+        soumission = Soumission.objects.create(
+            eleve=profil,
+            exercice=exercice,
+            reponse_index=reponse_index,
+            est_correcte=est_correcte,
+            score=score,
+            temps_reponse=temps_reponse
+        )
+        
+        # Mettre à jour progression (pour tous)
+        progression, _ = Progression.objects.get_or_create(
+            eleve=profil,
+            topic=exercice.topic
+        )
+        progression.exercices_total += 1
+        if est_correcte:
+            progression.exercices_reussis += 1
+            progression.score_total += score
+            progression.erreurs_consecutives = 0
+            # Mettre à jour points élève
+            profil.points += score
+            profil.save()
+        else:
+            progression.erreurs_consecutives += 1
+        progression.save()
+        points_total = profil.points
+        erreurs_consecutives = progression.erreurs_consecutives
+        
+        # Préparer réponse avec feedback détaillé
+        feedback = {
+            'success': est_correcte,
+            'score': score,
+            'feedback_text': exercice.feedback_success_text if est_correcte else exercice.feedback_fail_text,
+            'explication': explication,  # Explication détaillée
+            'reponse_correcte': reponse_correcte,  # La bonne réponse
+            'reponse_choisie': reponse_choisie,  # La réponse choisie
+            'feedback_audio_url': exercice.feedback_success_audio_url if est_correcte else exercice.feedback_fail_audio_url,
+            'visuel_desc': 'Étoiles ! Animations joyeuses !' if est_correcte else 'Essaie encore !',
+            'points_total': points_total,
+            'erreurs_consecutives': erreurs_consecutives
+        }
+        
+        return Response(feedback, status=status.HTTP_200_OK)
+
+
+class ProgressionViewSet(viewsets.ReadOnlyModelViewSet):
+    """Progression des élèves"""
+    queryset = Progression.objects.all()
+    serializer_class = ProgressionSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None  # Désactiver pagination pour progression (liste par élève)
+    
+    def get_queryset(self):
+        profil = get_object_or_404(ProfilEleve, user=self.request.user)
+        return Progression.objects.filter(eleve=profil).select_related('topic', 'topic__matiere')
+
+
+# Vues spéciales pour l'accueil et les fonctionnalités CP1/CP2
+class AccueilViewSet(viewsets.ViewSet):
+    """
+    Endpoint pour l'accueil par classe.
+    GET /api/accueil/{classe}/
+    """
+    
+    @action(detail=False, methods=['get'], url_path='(?P<classe>[^/.]+)')
+    def accueil_classe(self, request, classe=None):
+        """
+        Retourne la liste des matières avec images/audio pour l'accueil.
+        Pour CP1/CP2: contenu statique pré-généré.
+        Pour >CP2: peut inclure des suggestions IA.
+        """
+        classe = classe.lower()
+        
+        # Vérifier si classe utilise IA
+        utilise_ia = classe not in settings.CLASSES_SANS_IA
+        
+        # Récupérer matières filtrées
+        matieres = Matiere.objects.all().order_by('ordre')
+        if classe in ['cp1', 'cp2']:
+            matieres = matieres.exclude(nom__icontains='histoire').exclude(nom__icontains='geographie').exclude(nom__icontains='géographie')
+            
+        matieres_data = MatiereSerializer(matieres, many=True).data
+        
+        # Pour CP1/CP2, ajouter topics populaires
+        topics_data = []
+        if not utilise_ia:
+            topics = Topic.objects.filter(classe=classe)[:5]  # 5 premiers
+            topics_data = TopicSerializer(topics, many=True).data
+        
+        return Response({
+            'classe': classe,
+            'utilise_ia': utilise_ia,
+            'matieres': matieres_data,
+            'topics_populaires': topics_data
+        })
+
+
+class ExplicationViewSet(viewsets.ViewSet):
+    """
+    Endpoint pour obtenir les explications de topics.
+    GET /api/explication/{topic_id}/
+    """
+    
+    @action(detail=False, methods=['get'], url_path='(?P<topic_id>[^/.]+)')
+    def explication_topic(self, request, topic_id=None):
+        """
+        Retourne l'explication d'un topic.
+        Pour CP1/CP2: utilise contenu pré-stocké.
+        Pour >CP2: génère avec IA si nécessaire.
+        """
+        topic = get_object_or_404(Topic.objects.select_related('matiere'), id=topic_id)
+        
+        # Récupérer profil élève si authentifié
+        classe = topic.classe
+        if request.user.is_authenticated:
+            try:
+                profil = ProfilEleve.objects.get(user=request.user)
+                classe = profil.classe
+            except ProfilEleve.DoesNotExist:
+                pass
+        
+        utilise_ia = classe not in settings.CLASSES_SANS_IA
+        
+        if topic.contenu_cours:
+            # Utiliser le contenu déjà généré
+            explication = topic.contenu_cours
+            audio_url = topic.audio_url
+        elif utilise_ia:
+            # Générer avec IA si manquant
+            result = generate_explication_ia(topic, classe)
+            explication = result.get('explication', topic.resume)
+            audio_url = result.get('audio_url', topic.audio_url)
+            
+            # Optionnel: Sauvegarder pour plus tard
+            topic.contenu_cours = explication
+            topic.audio_url = audio_url
+            topic.save()
+        else:
+            # Pour CP1/CP2 sans IA générative directe
+            explication = topic.resume
+            audio_url = topic.audio_url
+        
+        return Response({
+            'topic_id': topic.id,
+            'titre': topic.titre,
+            'explication': explication,
+            'audio_url': audio_url,
+            'image_url': topic.image_url,
+            'utilise_ia': utilise_ia
+        })
+
+
+class ExerciceAdaptatifViewSet(viewsets.ViewSet):
+    """
+    Endpoint pour obtenir des exercices adaptatifs.
+    GET /api/exercices-adaptatifs/{topic_id}/
+    """
+    
+    @action(detail=False, methods=['get'], url_path='(?P<topic_id>[^/.]+)')
+    def exercices_topic(self, request, topic_id=None):
+        """
+        Retourne un lot de 5 exercices pour un topic.
+        Aléatoire parmi les exercices non encore réussis (si possible).
+        """
+        topic = get_object_or_404(Topic.objects.select_related('matiere'), id=topic_id)
+        
+        # Récupérer profil élève
+        profil_actuel = None
+        if request.user.is_authenticated:
+            try:
+                profil_actuel = ProfilEleve.objects.get(user=request.user)
+            except ProfilEleve.DoesNotExist:
+                pass
+        else:
+            session_key = request.session.session_key
+            if not session_key:
+                request.session.create()
+                session_key = request.session.session_key
+            
+            username_anonyme = f'anonyme_{session_key[:8]}'
+            try:
+                user_anonyme = User.objects.get(username=username_anonyme)
+                profil_actuel = ProfilEleve.objects.get(user=user_anonyme)
+            except (User.DoesNotExist, ProfilEleve.DoesNotExist):
+                pass
+
+        # Exercices déjà réussis
+        completed_ids = []
+        if profil_actuel:
+            completed_ids = Soumission.objects.filter(
+                eleve=profil_actuel,
+                exercice__topic=topic,
+                est_correcte=True
+            ).values_list('exercice_id', flat=True)
+
+        # Exercices à exclure (déjà vus dans la session actuelle côté front)
+        exclus_ids = request.query_params.getlist('exclude[]') + request.query_params.getlist('exclude')
+        final_exclude = list(set(list(completed_ids) + [int(id) for id in exclus_ids if str(id).isdigit()]))
+
+        # Sélectionner 5 exercices aléatoires non réussis/exclus
+        exercices_queryset = Exercice.objects.filter(topic=topic).exclude(id__in=final_exclude)
+        
+        # Si pas assez d'exercices non réussis, on prend n'importe lesquels du topic
+        if exercices_queryset.count() < 5:
+            exercices_queryset = Exercice.objects.filter(topic=topic).exclude(id__in=[int(id) for id in exclus_ids if str(id).isdigit()])
+
+        exercices = list(exercices_queryset.order_by('?')[:5])
+        
+        # Vérifier s'il en reste d'autres
+        remaining_count = Exercice.objects.filter(topic=topic).exclude(
+            id__in=final_exclude + [e.id for e in exercices]
+        ).count()
+
+        serializer = ExerciceSerializer(exercices, many=True)
+        return Response({
+            'exercices': serializer.data,
+            'has_more': remaining_count > 0,
+            'total_in_topic': topic.exercices.count()
+        })
