@@ -31,7 +31,7 @@ backend/
 │   │   ├── curriculum.py       # Matières et Topics
 │   │   ├── exercises.py        # Exercices et soumissions
 │   │   ├── learning.py         # Accueil et explications
-│   │   ├── chatbot.py          # Tuteur Sandy
+│   │   ├── chatbot.py          # Tuteur Prof. Plankton
 │   │   └── progression.py      # Suivi progression
 │   ├── exceptions.py           # Exceptions personnalisées
 │   ├── serializers.py          # Sérialiseurs DRF
@@ -208,7 +208,7 @@ Suivi de progression par topic.
 
 | Méthode | Endpoint | Description |
 |---------|----------|-------------|
-| POST | `/api/tuteur-intelligent/chat/` | Discuter avec Sandy |
+| POST | `/api/tuteur-intelligent/chat/` | Discuter avec Prof. Plankton |
 
 ---
 
@@ -235,7 +235,7 @@ CLASSES_SANS_IA = ['cp1', 'cp2']
 | `generate_explication_ia(topic, classe)` | Génère explication + audio |
 | `generate_exercice_ia(topic, classe, difficulte)` | Génère un exercice |
 | `generate_exercises_batch_ia(topic, classe, count)` | Génère lot d'exercices |
-| `chat_tuteur_ia(message, classe, history, user_info)` | Chat avec Sandy |
+| `chat_tuteur_ia(message, classe, history, user_info)` | Chat avec Prof. Plankton |
 
 ---
 
@@ -388,6 +388,7 @@ server {
 | `python manage.py generer_contenu_cours --classe=cp1` | Génère contenu IA pour les topics |
 | `python manage.py generer_exercices --limit=10` | Génère exercices IA |
 | `python manage.py generer_audio --audio-only` | Génère audios manquants |
+| `python scripts/cleanup_curriculum.py` | Nettoie les doublons et sujets inappropriés |
 
 ### Exemples
 
