@@ -13,9 +13,9 @@ WORKDIR /app
 # Installer les dépendances système requises pour mysqlclient
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        default-libmysqlclient-dev \
-        build-essential \
-        pkg-config \
+    default-libmysqlclient-dev \
+    build-essential \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Copier les fichiers de dépendances
@@ -30,8 +30,12 @@ COPY . /app/
 # Collecter les fichiers statiques (optionnel ici si géré par un volume ou S3, mais utile pour une image autonome)
 # RUN python manage.py collectstatic --noinput
 
+# Copier le script d'entrypoint et le rendre exécutable
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Exposer le port sur lequel l'application s'exécute
 EXPOSE 8000
 
-# Commande par défaut pour lancer l'application avec Gunicorn
-CMD ["gunicorn", "tuteur_intelligent.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
+# Commande par défaut pour utiliser l'entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"]
