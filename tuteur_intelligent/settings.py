@@ -22,7 +22,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-me-in-production')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,backend-ct1y9n54.b4a.run,.b4a.run').split(',')
 
 # Application definition
 INSTALLED_APPS = [
@@ -153,7 +153,20 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 # CORS
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173').split(',')
+# CORS & CSRF
+CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 
+    'http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173,'
+    'https://tuteur-frontend.vercel.app,'
+    'https://tuteur-fr-git-9e3e31-ouedraogo-bonaventure-cheick-hams-projects.vercel.app,'
+    'https://tuteur-frontend-hfyv5cbbj.vercel.app'
+).split(',')
+
+CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS',
+    'https://tuteur-frontend.vercel.app,'
+    'https://tuteur-fr-git-9e3e31-ouedraogo-bonaventure-cheick-hams-projects.vercel.app,'
+    'https://tuteur-frontend-hfyv5cbbj.vercel.app,'
+    'https://backend-ct1y9n54.b4a.run'
+).split(',')
 
 # Groq API
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')

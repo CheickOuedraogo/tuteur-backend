@@ -400,15 +400,3 @@ python manage.py generer_contenu_cours --classe=ce1 --limit=50
 python manage.py generer_exercices --limit=10 --target=20
 ```
 
----
-
-## Changelog
-
-### v2.0.0 (2026-02-07)
-
-- **Refactoring Views**: Structure modulaire (7 fichiers)
-- **Exceptions Personnalisées**: Gestion d'erreurs typée
-- **Logging Centralisé**: Fichiers rotatifs, niveaux configurables
-- **MySQL via DATABASE_URL**: Configuration flexible
-- **CORS Configurable**: Via variable d'environnement
-- **Tests Corrigés**: Mocks mis à jour
