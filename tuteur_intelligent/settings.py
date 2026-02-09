@@ -154,12 +154,17 @@ AUTHENTICATION_BACKENDS = [
 
 # CORS
 # CORS & CSRF
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 
-    'http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173,'
-    'https://tuteur-frontend.vercel.app,'
-    'https://tuteur-fr-git-9e3e31-ouedraogo-bonaventure-cheick-hams-projects.vercel.app,'
-    'https://tuteur-frontend-hfyv5cbbj.vercel.app'
-).split(',')
+# CORS & CSRF
+CORS_ALLOW_ALL_ORIGINS = True # Autoriser tout le monde (pour débogage et lancement)
+CORS_ALLOW_CREDENTIALS = True
+
+# On garde la config spécifique commentée pour plus tard si besoin
+# CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 
+#     'http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173,'
+#     'https://tuteur-frontend.vercel.app,'
+#     'https://tuteur-fr-git-9e3e31-ouedraogo-bonaventure-cheick-hams-projects.vercel.app,'
+#     'https://tuteur-frontend-hfyv5cbbj.vercel.app'
+# ).split(',')
 
 CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS',
     'https://tuteur-frontend.vercel.app,'
