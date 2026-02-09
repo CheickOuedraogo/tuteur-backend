@@ -170,7 +170,8 @@ CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS',
     'https://tuteur-frontend.vercel.app,'
     'https://tuteur-fr-git-9e3e31-ouedraogo-bonaventure-cheick-hams-projects.vercel.app,'
     'https://tuteur-frontend-hfyv5cbbj.vercel.app,'
-    'https://backend-ct1y9n54.b4a.run'
+    'https://backend-ct1y9n54.b4a.run,'
+    'https://backend-i3vsef8a.b4a.run'
 ).split(',')
 
 # Groq API
