@@ -390,13 +390,4 @@ server {
 | `python manage.py generer_audio --audio-only` | Génère audios manquants |
 | `python scripts/cleanup_curriculum.py` | Nettoie les doublons et sujets inappropriés |
 
-### Exemples
-
-```bash
-# Générer contenu pour CE1
-python manage.py generer_contenu_cours --classe=ce1 --limit=50
-
-# Générer 20 exercices par topic
-python manage.py generer_exercices --limit=10 --target=20
-```
 

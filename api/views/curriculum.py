@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from django.conf import settings
 
 from core.models import Matiere, Topic, ProfilEleve
+from core.programme_officiel import get_matieres_pour_classe
 from api.serializers import MatiereSerializer, TopicSerializer
 
 logger = logging.getLogger(__name__)
@@ -31,9 +32,10 @@ class MatiereViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """
         Filtre les matières selon la classe.
-        Pour CP1/CP2: exclut histoire/géographie.
+        N'affiche que les matières qui :
+          1. Ont au moins un topic pour cette classe
+          2. Font partie du programme officiel pour cette classe
         """
-        queryset = Matiere.objects.all()
         classe = self.request.query_params.get('classe')
         
         # Si pas de classe en param, utiliser celle du profil
@@ -43,15 +45,22 @@ class MatiereViewSet(viewsets.ReadOnlyModelViewSet):
             except ProfilEleve.DoesNotExist:
                 pass
         
-        # Exclure histoire/géo pour les petites classes
-        if classe and classe.lower() in ['cp1', 'cp2']:
-            queryset = queryset.exclude(
-                nom__icontains='histoire'
-            ).exclude(
-                nom__icontains='geographie'
-            ).exclude(
-                nom__icontains='géographie'
+        queryset = Matiere.objects.all()
+        
+        if classe:
+            classe = classe.lower()
+            
+            # Double filtrage :
+            # 1) Matières qui ont des topics pour cette classe
+            from django.db.models import Exists, OuterRef
+            queryset = queryset.filter(
+                Exists(Topic.objects.filter(matiere=OuterRef('pk'), classe=classe))
             )
+            
+            # 2) Matières autorisées par le programme officiel
+            matieres_autorisees = get_matieres_pour_classe(classe)
+            if matieres_autorisees:
+                queryset = queryset.filter(nom__in=matieres_autorisees)
             
         return queryset.order_by('ordre')
 

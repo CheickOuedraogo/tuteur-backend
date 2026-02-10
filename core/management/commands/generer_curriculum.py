@@ -2,6 +2,7 @@ import json
 import time
 from django.core.management.base import BaseCommand
 from core.models import Matiere, Topic, ProfilEleve
+from core.programme_officiel import get_matieres_pour_classe
 from ia.services import call_groq
 
 class Command(BaseCommand):
@@ -16,7 +17,14 @@ class Command(BaseCommand):
         for classe in classes_superieures:
             self.stdout.write(self.style.MIGRATE_HEADING(f'\nTraitement de la classe : {classe.upper()}'))
             
+            # Matières autorisées pour cette classe
+            matieres_autorisees = get_matieres_pour_classe(classe)
+            
             for matiere in matieres:
+                # FILTRAGE : ne traiter que les matières du programme officiel
+                if matieres_autorisees and matiere.nom not in matieres_autorisees:
+                    continue
+                
                 # Vérifier si on a déjà des topics pour cette classe/matière
                 existing_count = Topic.objects.filter(classe=classe, matiere=matiere).count()
                 if existing_count > 0:

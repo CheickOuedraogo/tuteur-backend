@@ -3,6 +3,7 @@ import time
 import re
 from django.core.management.base import BaseCommand
 from core.models import Matiere, Topic, Exercice, ProfilEleve
+from core.programme_officiel import get_matieres_pour_classe
 from ia.services import call_groq, generate_explication_ia, generate_exercises_batch_ia
 
 class Command(BaseCommand):
@@ -42,7 +43,16 @@ class Command(BaseCommand):
 
         for classe in classes:
             self.stdout.write(f"\nClasse: {classe.upper()}")
+            
+            # Récupérer les matières autorisées pour cette classe
+            matieres_autorisees = get_matieres_pour_classe(classe)
+            
             for matiere in matieres:
+                # FILTRAGE OFFICIEL : ne générer que pour les matières du programme
+                if matieres_autorisees and matiere.nom not in matieres_autorisees:
+                    self.stdout.write(f"  - {matiere.nom}: IGNORÉ (hors programme {classe.upper()})")
+                    continue
+                
                 existing = Topic.objects.filter(classe=classe, matiere=matiere).count()
                 if existing >= limit:
                     self.stdout.write(f"  - {matiere.nom}: OK ({existing} thèmes)")
