@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404
 from django.conf import settings
 
 from core.models import ProfilEleve, Matiere, Topic
+from core.programme_officiel import get_matieres_pour_classe
 from api.serializers import MatiereSerializer, TopicSerializer
 from ia.services import generate_explication_ia
 
@@ -41,15 +42,17 @@ class AccueilViewSet(viewsets.ViewSet):
         utilise_ia = classe not in settings.CLASSES_SANS_IA
         
         # Récupérer matières filtrées
-        matieres = Matiere.objects.all().order_by('ordre')
-        if classe in ['cp1', 'cp2']:
-            matieres = matieres.exclude(
-                nom__icontains='histoire'
-            ).exclude(
-                nom__icontains='geographie'
-            ).exclude(
-                nom__icontains='géographie'
-            )
+        from django.db.models import Exists, OuterRef
+        matieres = Matiere.objects.filter(
+            Exists(Topic.objects.filter(matiere=OuterRef('pk'), classe=classe))
+        )
+        
+        # Filtrer par le programme officiel
+        matieres_autorisees = get_matieres_pour_classe(classe)
+        if matieres_autorisees:
+            matieres = matieres.filter(nom__in=matieres_autorisees)
+        
+        matieres = matieres.order_by('ordre')
             
         matieres_data = MatiereSerializer(matieres, many=True).data
         

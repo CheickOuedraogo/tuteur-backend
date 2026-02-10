@@ -47,19 +47,33 @@ class ProfilEleve(models.Model):
 class Matiere(models.Model):
     """Matière scolaire (Expression Orale, Mathématiques, etc.)"""
     NOM_MATIERES = [
+        ('francais', 'Français'),
+        ('lecture', 'Lecture'),
+        ('litterature', 'Littérature'),
+        ('ecriture', 'Écriture'),
+        ('grammaire', 'Grammaire'),
+        ('conjugaison', 'Conjugaison'),
+        ('orthographe', 'Orthographe'),
+        ('vocabulaire', 'Vocabulaire'),
         ('expression_orale', 'Expression Orale'),
+        ('expression_ecrite', 'Expression Écrite'),
         ('mathematiques', 'Mathématiques'),
-        ('sciences', 'Sciences d\'Observation'),
+        ('arithmetique', 'Arithmétique'),
+        ('geometrie', 'Géométrie'),
+        ('systeme_metrique', 'Système Métrique'),
+        ('sciences', 'Sciences'),
+        ('exercices_sensoriels', 'Exercices Sensoriels'),
+        ('exercices_observation', 'Exercices d\'Observation'),
         ('histoire', 'Histoire'),
         ('geographie', 'Géographie'),
         ('ecm', 'Éducation Civique et Morale'),
-        ('eps', 'Éducation Physique et Sportive'),
+        ('aec', 'Activités d\'Expression et de Création (AEC)'),
         ('arts', 'Arts et Culture'),
-        ('app', 'Activités Pratiques de Production'),
         ('anglais', 'Anglais'),
         ('svt', 'SVT'),
-        ('sciences_physiques', 'Sciences Physiques'),
+        ('physique_chimie', 'Physique-Chimie'),
         ('philosophie', 'Philosophie'),
+        ('tic', 'Informatique (TIC)'),
     ]
     
     nom = models.CharField(max_length=50, choices=NOM_MATIERES, unique=True)
